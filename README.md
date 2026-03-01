@@ -557,6 +557,17 @@ docker run -p 8501:8501 customer-segmentation-app
 
 The app will be available at **`http://localhost:8501`**.
 
+#### Pre-built Image on Docker Hub
+
+The production image is published on Docker Hub and can be pulled directly without building:
+
+```bash
+docker pull waelr1985/customer-segmentation-app:latest
+docker run -p 8501:8501 waelr1985/customer-segmentation-app:latest
+```
+
+**Docker Hub:** [waelr1985/customer-segmentation-app](https://hub.docker.com/r/waelr1985/customer-segmentation-app)
+
 #### Docker Image Details
 
 | Property | Value |
