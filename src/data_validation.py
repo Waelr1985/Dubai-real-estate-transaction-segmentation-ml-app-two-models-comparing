@@ -8,32 +8,33 @@ def validate_data(df: pd.DataFrame) -> pd.DataFrame:
     '''
     Validates and cleans the schema.
     Extracts dates, fills NAs, and ensures types are correct.
+    Returns a NEW dataframe — the original is never modified.
     '''
     logging.info("Starting data validation and basic cleaning...")
-    
+    df = df.copy()
+
     # 1. Date Extraction
     if 'instance_date' in df.columns:
         df['instance_date'] = pd.to_datetime(df['instance_date'], errors='coerce')
         df['year'] = df['instance_date'].dt.year
         df['month'] = df['instance_date'].dt.month
-        df.drop(columns=['instance_date'], inplace=True)
-    
+        df = df.drop(columns=['instance_date'])
+
     # 2. Fill Missing Values
     # For numeric, fill with median
     for col in NUMERIC_FEATURES:
         if col in df.columns:
-            # Convert to numeric just in case
             df[col] = pd.to_numeric(df[col], errors='coerce')
             median_val = df[col].median()
-            df[col].fillna(median_val, inplace=True)
-            
+            df[col] = df[col].fillna(median_val)
+
     # For categorical, fill with mode or 'Unknown'
     for col in CATEGORICAL_FEATURES:
         if col in df.columns:
             df[col] = df[col].astype(str)
-            df[col].fillna('Unknown', inplace=True)
+            df[col] = df[col].fillna('Unknown')
             df[col] = df[col].replace('nan', 'Unknown')
-            
+
     logging.info(f"Data validation complete. Shape: {df.shape}")
     return df
 
