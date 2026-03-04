@@ -280,39 +280,32 @@ elif menu == "Segmentation Results":
 
             if not pca_image_shown:
                 try:
-                    from src.data_preprocessing import get_preprocessor, apply_target_encoding
-                    import umap.umap_ as umap
-                    from src.config import NUMERIC_FEATURES, CATEGORICAL_FEATURES
+                    from src2.data_validation import validate_data
+                    from src2.data_preprocessing import apply_target_encoding
+                    import joblib
+                    import os
                     
                     with st.spinner(f"Dynamically generating 2D {current_engine.split('(')[1][:-1]} projection... This may take a moment."):
-                        # 1. Target Encode
-                        df_te = apply_target_encoding(df)
-                        
-                        # 2. Impute NaNs (match inference logic)
-                        for col in NUMERIC_FEATURES:
-                            if col in df_te.columns:
-                                df_te[col] = df_te[col].fillna(df_te[col].median())
-                        for col in CATEGORICAL_FEATURES:
-                            if col in df_te.columns:
-                                df_te[col] = df_te[col].fillna("Unknown")
-                        
-                        # 3. Preprocess
-                        preprocessor = get_preprocessor(df_te)
-                        X_processed = preprocessor.fit_transform(df_te)
+                        df_te = apply_target_encoding(validate_data(df.copy()))
                         
                         # 4. Reduce Dimensions to 2D
                         if current_engine == "Strategy D (Fast PCA)":
-                            reducer = PCA(n_components=2, random_state=42)
-                            reduced_data = reducer.fit_transform(X_processed)
-                            # Get Variance Explained
+                            pipeline = joblib.load(os.path.join('models', 'segmentation_pipeline.pkl'))
+                            preprocessor = pipeline.named_steps['preprocessor']
+                            reducer = pipeline.named_steps['pca']
+                            X_processed = preprocessor.transform(df_te)
+                            reduced_data = reducer.transform(X_processed)[:, :2]
+                            
                             evr = reducer.explained_variance_ratio_
                             dim1_label = f"Principal Component 1 ({evr[0]*100:.2f}% Variance)"
                             dim2_label = f"Principal Component 2 ({evr[1]*100:.2f}% Variance)"
                             title_prefix = "PCA"
                         else:
-                            # UMAP is non-deterministic and has no variance ratio, just relative distances
-                            reducer = umap.UMAP(n_components=2, random_state=42, n_neighbors=15, min_dist=0.1)
-                            reduced_data = reducer.fit_transform(X_processed)
+                            preprocessor = joblib.load(os.path.join('models', 'preprocessor.pkl'))
+                            reducer = joblib.load(os.path.join('models', 'umap_model.pkl'))
+                            X_processed = preprocessor.transform(df_te)
+                            # Our UMAP model is 5D; take the first 2 dimensions for the 2D scatter plot
+                            reduced_data = reducer.transform(X_processed)[:, :2]
                             dim1_label = "UMAP Dimension 1"
                             dim2_label = "UMAP Dimension 2"
                             title_prefix = "UMAP"
@@ -368,23 +361,13 @@ elif menu == "Segmentation Results":
             st.markdown("### Model Evaluation Metrics")
             try:
                 @st.cache_data
-                def calculate_evaluation_scores(df_for_calc):
-                    from src.data_preprocessing import get_preprocessor, apply_target_encoding
-                    from src.config import NUMERIC_FEATURES, CATEGORICAL_FEATURES
-                    import umap.umap_ as umap
+                def calculate_evaluation_scores(df_for_calc, current_engine):
+                    from src2.data_validation import validate_data
+                    from src2.data_preprocessing import apply_target_encoding
+                    import joblib
+                    import os
                     
-                    # Apply target encoding
-                    df_te = apply_target_encoding(df_for_calc)
-                    
-                    # Impute NaNs to avoid PCA/UMAP fit crashing on new datasets
-                    for col in NUMERIC_FEATURES:
-                        if col in df_te.columns:
-                            df_te[col] = df_te[col].fillna(df_te[col].median())
-                    for col in CATEGORICAL_FEATURES:
-                        if col in df_te.columns:
-                            df_te[col] = df_te[col].fillna("Unknown")
-                    
-                    prep = get_preprocessor(df_te)
+                    df_te = apply_target_encoding(validate_data(df_for_calc.copy()))
                     
                     # Hard cap for performance
                     MAX_SAMPLES = 15000
@@ -395,15 +378,17 @@ elif menu == "Segmentation Results":
                         df_sample = df_te
                         score_type = "Full Uploaded Dataset"
 
-                    X_proc = prep.fit_transform(df_sample)
-                    
-                    # Apply reduction based on strategy selected
                     if current_engine == "Strategy D (Fast PCA)":
-                        reducer = PCA(n_components=0.90, random_state=42)
-                        X_reduced = reducer.fit_transform(X_proc)
+                        pipeline = joblib.load(os.path.join('models', 'segmentation_pipeline.pkl'))
+                        preprocessor = pipeline.named_steps['preprocessor']
+                        reducer = pipeline.named_steps['pca']
+                        X_proc = preprocessor.transform(df_sample)
+                        X_reduced = reducer.transform(X_proc)
                     else:
-                        reducer = umap.UMAP(n_components=5, random_state=42)
-                        X_reduced = reducer.fit_transform(X_proc)
+                        preprocessor = joblib.load(os.path.join('models', 'preprocessor.pkl'))
+                        reducer = joblib.load(os.path.join('models', 'umap_model.pkl'))
+                        X_proc = preprocessor.transform(df_sample)
+                        X_reduced = reducer.transform(X_proc)
                         
                     labels_for_calc = df_sample['Segment'].values
                     
@@ -422,12 +407,12 @@ elif menu == "Segmentation Results":
                         si_score = 0.217
                         db_score = 1.628
                     else:
-                        ch_score = 47251.00
-                        si_score = 0.287
-                        db_score = 1.185
+                        ch_score = 39113.00
+                        si_score = 0.234
+                        db_score = 1.459
                     st.info(f"Note: Showing exact global Evaluation Metrics from offline model training ({current_engine}).")
                 else:
-                    ch_score, si_score, db_score, score_type = calculate_evaluation_scores(df)
+                    ch_score, si_score, db_score, score_type = calculate_evaluation_scores(df, current_engine)
 
                 col1, col2, col3 = st.columns(3)
                 with col1:
