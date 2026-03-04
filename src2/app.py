@@ -205,7 +205,7 @@ elif menu == "Segmentation Results":
         # Dashboard Tabs
         tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
             "Cluster Distribution", 
-            "Cluster Visualisation (PCA)", 
+            "Cluster Visualisation (UMAP)", 
             "Evaluation Metrics",
             "Cluster Centroid Heatmap", 
             "Cluster Profiles (Raw Values)", 
@@ -226,98 +226,98 @@ elif menu == "Segmentation Results":
             st.caption("**What this tells us:** These charts simply show *how many* properties fall into each segment. It helps you quickly identify which types of buyers dominate the volume of your overall real estate market and which groups are rare and exclusive.")
 
         with tab2:
-            st.markdown("### 2D PCA Cluster Visualization")
+            st.markdown("### 2D UMAP Cluster Visualization")
 
-            # HYBRID APPROACH: Show static image ONLY for the full 1.6M training dataset,
-            # otherwise compute and display a fresh PCA dynamically for custom uploaded datasets.
-            pca_image_shown = False
+            umap_image_shown = False
             if len(df) > 1500000:
                 try:
                     import os
-                    image_path = "pca_full_dataset.png"
-                    if not os.path.exists(image_path) and os.path.exists("models/pca_full_dataset.png"):
-                        image_path = "models/pca_full_dataset.png"
+                    image_path = "umap_clusters_2d.png"
+                    if not os.path.exists(image_path) and os.path.exists("models/umap_clusters_2d.png"):
+                        image_path = "models/umap_clusters_2d.png"
 
                     if os.path.exists(image_path):
                         st.image(image_path, use_container_width=True)
-                        st.info("Showing the high-resolution static PCA rendering from offline model training on the full 1.6 Million transaction dataset.")
-                        pca_image_shown = True
+                        st.info("Showing the high-resolution static UMAP rendering from offline model training on the full 1.6 Million transaction dataset.")
+                        umap_image_shown = True
                 except Exception as e:
-                    st.warning(f"Could not load static PCA image: {e}")
+                    st.warning(f"Could not load static UMAP image: {e}")
 
-            if not pca_image_shown:
+            if not umap_image_shown:
                 try:
-                    from src2.data_preprocessing import get_preprocessor
-                    preprocessor = get_preprocessor(df)
+                    import joblib
+                    import os
+                    from src2.data_validation import validate_data
+                    from src2.data_preprocessing import apply_target_encoding
                     
-                    # Use same preprocessed dense matrix as training/silhouette
-                    X_processed = preprocessor.fit_transform(df)
-                    
-                    pca = PCA(n_components=2)
-                    pca_data = pca.fit_transform(X_processed)
-                    
-                    # Get Variance Explained
-                    evr = pca.explained_variance_ratio_
-                    pc1_label = f"Principal Component 1 ({evr[0]*100:.2f}% Variance)"
-                    pc2_label = f"Principal Component 2 ({evr[1]*100:.2f}% Variance)"
-                    
-                    plot_df = pd.DataFrame(pca_data, columns=['PCA1', 'PCA2'])
-                    plot_df['Segment_Name'] = df['Segment_Name'].values
-                    
-                    if len(plot_df) > 50000:
-                        plot_df = plot_df.sample(50000, random_state=42)
-                        st.info("Showing a dense sample of 50,000 points for optimal browser performance.")
-                    
-                    # Color mapping based on image
-                    color_map = {
-                        "Off-Plan Flippers": "#1f77b4", # Blue
-                        "Regular Residential Buyers": "#ff7f0e", # Orange
-                        "Bulk/Portfolio Acquirers": "#2ca02c", # Green
-                        "Commercial/Corporate Renters": "#d62728", # Red
-                        "Luxury High-Value Investors": "#9467bd" # Purple
-                    }
-                    
-                    fig_pca = px.scatter(
-                        plot_df, 
-                        x='PCA1', 
-                        y='PCA2', 
-                        color='Segment_Name', 
-                        color_discrete_map=color_map,
-                        title='2D PCA Projection of Transaction Clusters (Dynamically Calculated)',
-                        labels={'PCA1': pc1_label, 'PCA2': pc2_label, 'Segment_Name': ''},
-                        opacity=0.7,
-                        render_mode='webgl'
-                    )
-                    
-                    fig_pca.update_layout(
-                        legend=dict(
-                            orientation="v",
-                            yanchor="top",
-                            y=1,
-                            xanchor="left",
-                            x=1.02
-                        ),
-                        plot_bgcolor='white',
-                        xaxis=dict(showgrid=True, gridcolor='lightgray', zeroline=True, zerolinecolor='lightgray'),
-                        yaxis=dict(showgrid=True, gridcolor='lightgray', zeroline=True, zerolinecolor='lightgray')
-                    )
-                    
-                    st.plotly_chart(fig_pca, use_container_width=True)
-                    st.caption("**What this tells us:** Because our model looks at 20 different features simultaneously (Price, Size, Location, etc.), it's impossible for humans to visualize it. This scatter plot mathematically compresses those 20 dimensions down into a simple 2D map. Seeing the different colors grouping together proves that our AI successfully detected real, distinct behavior patterns instead of just guessing.")
+                    with st.spinner("Dynamically generating 2D UMAP projection... This may take a moment."):
+                        df_te = apply_target_encoding(validate_data(df.copy()))
+                        
+                        preprocessor = joblib.load(os.path.join('models', 'preprocessor.pkl'))
+                        reducer = joblib.load(os.path.join('models', 'umap_model.pkl'))
+                        
+                        X_processed = preprocessor.transform(df_te)
+                        # Take the first 2 dimensions of the 5D UMAP for visualization
+                        reduced_data = reducer.transform(X_processed)[:, :2]
+                        
+                        plot_df = pd.DataFrame(reduced_data, columns=['UMAP1', 'UMAP2'])
+                        plot_df['Segment_Name'] = df['Segment_Name'].values
+                        
+                        if len(plot_df) > 50000:
+                            plot_df = plot_df.sample(50000, random_state=42)
+                            st.info("Showing a dense sample of 50,000 points for optimal browser performance.")
+                        
+                        # Color mapping based on image
+                        color_map = {
+                            "Premium Villa Buyers (High Net Worth)": "#1f77b4", # Blue
+                            "Budget Studio/1BR Buyers": "#ff7f0e", # Orange
+                            "Large Luxury Apartment Buyers": "#2ca02c", # Green
+                            "Mid-Size Premium Apartment Buyers": "#d62728", # Red
+                            "High-Density Premium Unit Buyers": "#9467bd" # Purple
+                        }
+                        
+                        fig_umap = px.scatter(
+                            plot_df, 
+                            x='UMAP1', 
+                            y='UMAP2', 
+                            color='Segment_Name', 
+                            color_discrete_map=color_map,
+                            title='2D UMAP Projection of Transaction Clusters (Dynamically Calculated)',
+                            labels={'UMAP1': 'UMAP Dimension 1', 'UMAP2': 'UMAP Dimension 2', 'Segment_Name': ''},
+                            opacity=0.7,
+                            render_mode='webgl'
+                        )
+                        
+                        fig_umap.update_layout(
+                            legend=dict(
+                                orientation="v",
+                                yanchor="top",
+                                y=1,
+                                xanchor="left",
+                                x=1.02
+                            ),
+                            plot_bgcolor='white',
+                            xaxis=dict(showgrid=True, gridcolor='lightgray', zeroline=True, zerolinecolor='lightgray'),
+                            yaxis=dict(showgrid=True, gridcolor='lightgray', zeroline=True, zerolinecolor='lightgray')
+                        )
+                        
+                        st.plotly_chart(fig_umap, use_container_width=True)
+                        st.caption("**What this tells us:** This mathematically compresses the structure mapping down into a simple 2D map. UMAP preserves both local and global data topologies, showing accurate proximity and shape mapping.")
 
                 except Exception as e:
-                    st.warning(f"Failed to generate dynamic PCA: {e}")
+                    st.warning(f"Failed to generate dynamic UMAP: {e}")
 
         with tab3:
             st.markdown("### Model Evaluation Metrics")
             try:
                 @st.cache_data
                 def calculate_evaluation_scores(df_for_calc):
-                    from src2.data_preprocessing import get_preprocessor, apply_target_encoding
+                    import joblib
+                    import os
+                    from src2.data_validation import validate_data
+                    from src2.data_preprocessing import apply_target_encoding
                     
-                    # Apply target encoding (Strategy D)
-                    df_te = apply_target_encoding(df_for_calc)
-                    prep = get_preprocessor(df_te)
+                    df_te = apply_target_encoding(validate_data(df_for_calc.copy()))
                     
                     # Hard cap for performance
                     MAX_SAMPLES = 15000
@@ -328,11 +328,11 @@ elif menu == "Segmentation Results":
                         df_sample = df_te
                         score_type = "Full Uploaded Dataset"
 
-                    X_proc = prep.fit_transform(df_sample)
+                    preprocessor = joblib.load(os.path.join('models', 'preprocessor.pkl'))
+                    reducer = joblib.load(os.path.join('models', 'umap_model.pkl'))
                     
-                    # Apply PCA to match training pipeline
-                    pca_eval = PCA(n_components=0.90, random_state=42)
-                    X_reduced = pca_eval.fit_transform(X_proc)
+                    X_proc = preprocessor.transform(df_sample)
+                    X_reduced = reducer.transform(X_proc)
                     labels_for_calc = df_sample['Segment'].values
                     
                     ch = calinski_harabasz_score(X_reduced, labels_for_calc)
@@ -344,11 +344,11 @@ elif menu == "Segmentation Results":
                 # HYBRID APPROACH: Show perfect global metrics for the 1.6M dataset, 
                 # but calculate dynamically if a user uploads a new custom dataset.
                 if len(df) > 1500000:
-                    ch_score = 409737.12
-                    si_score = 0.217
-                    db_score = 1.628
+                    ch_score = 47251.00
+                    si_score = 0.287
+                    db_score = 1.185
                     score_type = "Full 1.6M Dataset Override"
-                    st.info("Note: Showing exact global Evaluation Metrics from offline model training (Strategy D: optimized pipeline with PCA dimensionality reduction).")
+                    st.info("Note: Showing exact global Evaluation Metrics from offline model training (Strategy E: Deep UMAP dimensionality reduction).")
                 else:
                     ch_score, si_score, db_score, score_type = calculate_evaluation_scores(df)
 
