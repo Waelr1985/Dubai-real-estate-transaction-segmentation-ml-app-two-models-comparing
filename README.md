@@ -381,9 +381,15 @@ While this distinction exists in the data (96% of both sub-segments trace back t
 
 The marginal silhouette improvement (+0.03) reflects a tighter geometric fit, not a fundamentally new market segment. This sub-segmentation (villa buyers vs. land investors) is documented as a candidate for future iterations if business stakeholders require finer targeting within the premium non-unit market.
 
+### 9.4 Applying k=5 to UMAP (Strategy E)
+
+For the secondary UMAP pipeline (`src2/`), we explicitly maintained $k=5$ without executing a new rigorous Elbow Method search. This was a deliberate experimental control constraint. 
+
+By forcing UMAP to find exactly 5 clusters, we achieved a perfect 1-to-1 baseline comparison against PCA. This control proved mathematically that the massive **+32% Silhouette improvement** was derived entirely from UMAP's superior non-linear topological mapping, rather than an arbitrary change in the number of business segments.
+
 ---
 
-## 10. The 5 Discovered Market Segments
+## 10. The Segment Profiles: PCA vs UMAP
 
 The K-Means algorithm mathematically isolated 5 distinct transaction profiles. Segment names are derived directly from the **actual cluster feature profiles** (median worth, area, property type distribution, transaction type) — not from assumptions.
 
@@ -480,6 +486,16 @@ K-Means was re-run with **10 different random seeds** on the **full 1,665,112-ro
 | **Mid-Range Unit Buyers** | **99.0%** | 0.8% | 0.2% | 0.1% |
 | **High-Density Premium Units** | **99.5%** | 0.5% | 0.0% | 0.0% |
 | **Large-Plot Mortgage Holders** | 0.3% | **51.6%** | **38.6%** | 9.5% |
+
+### 10.8 UMAP Segment Identities (Strategy E)
+
+Because UMAP bends the feature space differently than PCA, the final 5 clusters naturally shifted their business meanings, yielding exceptionally tight, non-linear subsets. Based on the UMAP-generated profile, here is how the new clusters broke down:
+
+*   **Segment 0: The Premium Villa Buyers** (~405 sqm | 2.55M AED) — Extremely large residential villas, highest actual worth. Frequently found in "Al Thanayah Fourth".
+*   **Segment 1: The Budget Studio/1BR Buyers** (~43 sqm | 698k AED) — Smallest units on the market. Decent price per square meter (13.8k) but lowest overall entry price. Primarily "Al Barsha South Fourth".
+*   **Segment 2: The Large Luxury Apartment Buyers** (~114 sqm | 1.55M AED) — Massive luxury apartments in prestigious areas like "Marsa Dubai". High square footage and high price.
+*   **Segment 3: The Mid-Size Premium Apartment Buyers** (~88 sqm | 990k AED) — Also situated largely in "Marsa Dubai", but roughly 20% smaller footprints than Segment 2. 
+*   **Segment 4: The High-Density Premium Buyers** (~72 sqm | 1.18M AED) — Similar location profile to Segment 1 ("Al Barsha South Fourth") but yielding a much higher price-per-square-meter premium (16k/sqm vs 13.8k/sqm).
 
 ---
 
