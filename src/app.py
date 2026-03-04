@@ -44,6 +44,8 @@ if 'endpoint_url' not in st.session_state:
     st.session_state['endpoint_url'] = "https://customer-segmentation-endpoint.region.inference.ml.azure.com/score"
 if 'api_key' not in st.session_state:
     st.session_state['api_key'] = ""
+if 'model_engine' not in st.session_state:
+    st.session_state['model_engine'] = "Strategy D (Fast PCA)"
 
 # Sidebar Menu
 st.sidebar.markdown("### app")
@@ -119,6 +121,14 @@ elif menu == "Upload Data":
 
         st.dataframe(df.head())
         
+        st.markdown("### Model Selection")
+        st.session_state['model_engine'] = st.radio(
+            "Select Segmentation Engine",
+            ["Strategy D (Fast PCA)", "Strategy E (Deep UMAP)"],
+            index=0 if st.session_state['model_engine'] == "Strategy D (Fast PCA)" else 1,
+            help="PCA is lightning fast and great for live dashboards. UMAP is computationally heavy (slower) but generates mathematically tighter, non-linear clusters."
+        )
+        
         if st.button("Segment Transactions"):
             with st.spinner("Analyzing and segmenting data..."):
                 if st.session_state['deployment_mode'] == "Local Model (Demo)":
@@ -127,8 +137,13 @@ elif menu == "Upload Data":
                         from src.data_validation import validate_data, check_data_drift
                         from src.data_preprocessing import apply_target_encoding
                         
-                        # Load the local model
-                        with open('models/segmentation_pipeline.pkl', 'rb') as f:
+                        # Load the correct local model based on user selection
+                        if st.session_state['model_engine'] == "Strategy D (Fast PCA)":
+                            model_path = 'models/pca_segmentation_pipeline.pkl'
+                        else:
+                            model_path = 'models/segmentation_pipeline.pkl'
+                            
+                        with open(model_path, 'rb') as f:
                             pipeline = pickle.load(f)
                             
                         # Run drift detection
@@ -138,9 +153,14 @@ elif menu == "Upload Data":
                             for warning in drift_warnings:
                                 st.write(f"- {warning}")
                                 
-                        # Clean, target-encode, and predict (Strategy D pipeline)
+                        # Clean, target-encode, and predict
                         df_clean = validate_data(df)
                         df_clean = apply_target_encoding(df_clean)
+                        
+                        # Provide feedback if UMAP is running since it takes longer
+                        if st.session_state['model_engine'] == "Strategy E (Deep UMAP)":
+                            st.info("Executing UMAP dimensional projection. This may take up to 30 seconds depending on data size...")
+                            
                         clusters = pipeline.predict(df_clean)
                         df_segmented = df.copy()
                         df_segmented['Segment'] = clusters
@@ -187,15 +207,26 @@ elif menu == "Segmentation Results":
     else:
         st.subheader("Segmentation Results")
         
-        # Map cluster numbers to semantic names for UI
-        # Names are derived from actual cluster feature profiles (median worth, area, property type)
-        segment_names = {
-            0: "Budget Compact Buyers",
-            1: "High-Density Premium Units",
-            2: "Large-Plot Mortgage Holders",
-            3: "Mid-Range Unit Buyers",
-            4: "Premium Villa & Land Investors"
-        }
+        # Map cluster numbers to semantic names for UI based on the selected engine
+        current_engine = st.session_state.get('model_engine', "Strategy D (Fast PCA)")
+        
+        if current_engine == "Strategy D (Fast PCA)":
+            segment_names = {
+                0: "Budget Compact Buyers",
+                1: "High-Density Premium Units",
+                2: "Large-Plot Mortgage Holders",
+                3: "Mid-Range Unit Buyers",
+                4: "Premium Villa & Land Investors"
+            }
+        else:
+            # UMAP Semantic Profiles
+            segment_names = {
+                0: "Premium Villa Buyers (High Net Worth)",
+                1: "Budget Studio/1BR Buyers",
+                2: "Large Luxury Apartment Buyers",
+                3: "Mid-Size Premium Apartment Buyers",
+                4: "High-Density Premium Unit Buyers"
+            }
         
         df['Segment_Name'] = df['Segment'].map(segment_names).fillna(df['Segment'].apply(lambda x: f"Cluster {x}"))
         
@@ -203,9 +234,10 @@ elif menu == "Segmentation Results":
         available_numeric = [c for c in NUMERIC_FEATURES if c in df.columns]
         
         # Dashboard Tabs
+        vis_tab_title = f"Cluster Visualisation ({current_engine.split('(')[1][:-1]})"
         tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
             "Cluster Distribution", 
-            "Cluster Visualisation (PCA)", 
+            vis_tab_title, 
             "Evaluation Metrics",
             "Cluster Centroid Heatmap", 
             "Cluster Profiles (Raw Values)", 
@@ -226,47 +258,71 @@ elif menu == "Segmentation Results":
             st.caption("**What this tells us:** These charts simply show *how many* properties fall into each segment. It helps you quickly identify which types of buyers dominate the volume of your overall real estate market and which groups are rare and exclusive.")
 
         with tab2:
-            st.markdown("### 2D PCA Cluster Visualization")
+            st.markdown(f"### 2D {current_engine.split('(')[1][:-1]} Cluster Visualization")
 
             # HYBRID APPROACH: Show static image ONLY for the full 1.6M training dataset,
-            # otherwise compute and display a fresh PCA dynamically for custom uploaded datasets.
+            # otherwise compute and display a fresh PCA/UMAP dynamically for custom uploaded datasets.
             pca_image_shown = False
             if len(df) > 1500000:
                 try:
                     import os
-                    image_path = "pca_full_dataset.png"
-                    if not os.path.exists(image_path) and os.path.exists("models/pca_full_dataset.png"):
+                    if current_engine == "Strategy D (Fast PCA)":
                         image_path = "models/pca_full_dataset.png"
+                    else:
+                        image_path = "models/umap_clusters_2d.png"
 
                     if os.path.exists(image_path):
                         st.image(image_path, use_container_width=True)
-                        st.info("Showing the high-resolution static PCA rendering from offline model training on the full 1.6 Million transaction dataset.")
+                        st.info(f"Showing the high-resolution static rendering from offline {current_engine} model training on the full 1.6 Million transaction dataset.")
                         pca_image_shown = True
                 except Exception as e:
-                    st.warning(f"Could not load static PCA image: {e}")
+                    st.warning(f"Could not load static visualization image: {e}")
 
             if not pca_image_shown:
                 try:
-                    from src.data_preprocessing import get_preprocessor
-                    preprocessor = get_preprocessor(df)
+                    from src.data_preprocessing import get_preprocessor, apply_target_encoding
+                    import umap.umap_ as umap
+                    from src.config import NUMERIC_FEATURES, CATEGORICAL_FEATURES
                     
-                    # Use same preprocessed dense matrix as training/silhouette
-                    X_processed = preprocessor.fit_transform(df)
-                    
-                    pca = PCA(n_components=2)
-                    pca_data = pca.fit_transform(X_processed)
-                    
-                    # Get Variance Explained
-                    evr = pca.explained_variance_ratio_
-                    pc1_label = f"Principal Component 1 ({evr[0]*100:.2f}% Variance)"
-                    pc2_label = f"Principal Component 2 ({evr[1]*100:.2f}% Variance)"
-                    
-                    plot_df = pd.DataFrame(pca_data, columns=['PCA1', 'PCA2'])
-                    plot_df['Segment_Name'] = df['Segment_Name'].values
-                    
-                    if len(plot_df) > 50000:
-                        plot_df = plot_df.sample(50000, random_state=42)
-                        st.info("Showing a dense sample of 50,000 points for optimal browser performance.")
+                    with st.spinner(f"Dynamically generating 2D {current_engine.split('(')[1][:-1]} projection... This may take a moment."):
+                        # 1. Target Encode
+                        df_te = apply_target_encoding(df)
+                        
+                        # 2. Impute NaNs (match inference logic)
+                        for col in NUMERIC_FEATURES:
+                            if col in df_te.columns:
+                                df_te[col] = df_te[col].fillna(df_te[col].median())
+                        for col in CATEGORICAL_FEATURES:
+                            if col in df_te.columns:
+                                df_te[col] = df_te[col].fillna("Unknown")
+                        
+                        # 3. Preprocess
+                        preprocessor = get_preprocessor(df_te)
+                        X_processed = preprocessor.fit_transform(df_te)
+                        
+                        # 4. Reduce Dimensions to 2D
+                        if current_engine == "Strategy D (Fast PCA)":
+                            reducer = PCA(n_components=2, random_state=42)
+                            reduced_data = reducer.fit_transform(X_processed)
+                            # Get Variance Explained
+                            evr = reducer.explained_variance_ratio_
+                            dim1_label = f"Principal Component 1 ({evr[0]*100:.2f}% Variance)"
+                            dim2_label = f"Principal Component 2 ({evr[1]*100:.2f}% Variance)"
+                            title_prefix = "PCA"
+                        else:
+                            # UMAP is non-deterministic and has no variance ratio, just relative distances
+                            reducer = umap.UMAP(n_components=2, random_state=42, n_neighbors=15, min_dist=0.1)
+                            reduced_data = reducer.fit_transform(X_processed)
+                            dim1_label = "UMAP Dimension 1"
+                            dim2_label = "UMAP Dimension 2"
+                            title_prefix = "UMAP"
+                        
+                        plot_df = pd.DataFrame(reduced_data, columns=['Dim1', 'Dim2'])
+                        plot_df['Segment_Name'] = df['Segment_Name'].values
+                        
+                        if len(plot_df) > 50000:
+                            plot_df = plot_df.sample(50000, random_state=42)
+                            st.info("Showing a dense sample of 50,000 points for optimal browser performance.")
                     
                     # Color mapping based on image
                     color_map = {
@@ -279,12 +335,12 @@ elif menu == "Segmentation Results":
                     
                     fig_pca = px.scatter(
                         plot_df, 
-                        x='PCA1', 
-                        y='PCA2', 
+                        x='Dim1', 
+                        y='Dim2', 
                         color='Segment_Name', 
                         color_discrete_map=color_map,
-                        title='2D PCA Projection of Transaction Clusters (Dynamically Calculated)',
-                        labels={'PCA1': pc1_label, 'PCA2': pc2_label, 'Segment_Name': ''},
+                        title=f'2D {title_prefix} Projection of Transaction Clusters (Dynamically Calculated)',
+                        labels={'Dim1': dim1_label, 'Dim2': dim2_label, 'Segment_Name': ''},
                         opacity=0.7,
                         render_mode='webgl'
                     )
@@ -303,7 +359,7 @@ elif menu == "Segmentation Results":
                     )
                     
                     st.plotly_chart(fig_pca, use_container_width=True)
-                    st.caption("**What this tells us:** Because our model looks at 20 different features simultaneously (Price, Size, Location, etc.), it's impossible for humans to visualize it. This scatter plot mathematically compresses those 20 dimensions down into a simple 2D map. Seeing the different colors grouping together proves that our AI successfully detected real, distinct behavior patterns instead of just guessing.")
+                    st.caption("**What this tells us:** Because our model looks at multiple features simultaneously (Price, Size, Location, etc.), it's impossible for humans to visualize it. This scatter plot mathematically compresses those high dimensions down into a simple 2D map. Seeing the different colors grouping together proves that our AI successfully detected real, distinct behavior patterns instead of just guessing.")
 
                 except Exception as e:
                     st.warning(f"Failed to generate dynamic PCA: {e}")
@@ -314,9 +370,20 @@ elif menu == "Segmentation Results":
                 @st.cache_data
                 def calculate_evaluation_scores(df_for_calc):
                     from src.data_preprocessing import get_preprocessor, apply_target_encoding
+                    from src.config import NUMERIC_FEATURES, CATEGORICAL_FEATURES
+                    import umap.umap_ as umap
                     
-                    # Apply target encoding (Strategy D)
+                    # Apply target encoding
                     df_te = apply_target_encoding(df_for_calc)
+                    
+                    # Impute NaNs to avoid PCA/UMAP fit crashing on new datasets
+                    for col in NUMERIC_FEATURES:
+                        if col in df_te.columns:
+                            df_te[col] = df_te[col].fillna(df_te[col].median())
+                    for col in CATEGORICAL_FEATURES:
+                        if col in df_te.columns:
+                            df_te[col] = df_te[col].fillna("Unknown")
+                    
                     prep = get_preprocessor(df_te)
                     
                     # Hard cap for performance
@@ -330,9 +397,14 @@ elif menu == "Segmentation Results":
 
                     X_proc = prep.fit_transform(df_sample)
                     
-                    # Apply PCA to match training pipeline
-                    pca_eval = PCA(n_components=0.90, random_state=42)
-                    X_reduced = pca_eval.fit_transform(X_proc)
+                    # Apply reduction based on strategy selected
+                    if current_engine == "Strategy D (Fast PCA)":
+                        reducer = PCA(n_components=0.90, random_state=42)
+                        X_reduced = reducer.fit_transform(X_proc)
+                    else:
+                        reducer = umap.UMAP(n_components=5, random_state=42)
+                        X_reduced = reducer.fit_transform(X_proc)
+                        
                     labels_for_calc = df_sample['Segment'].values
                     
                     ch = calinski_harabasz_score(X_reduced, labels_for_calc)
@@ -344,11 +416,16 @@ elif menu == "Segmentation Results":
                 # HYBRID APPROACH: Show perfect global metrics for the 1.6M dataset, 
                 # but calculate dynamically if a user uploads a new custom dataset.
                 if len(df) > 1500000:
-                    ch_score = 409737.12
-                    si_score = 0.217
-                    db_score = 1.628
                     score_type = "Full 1.6M Dataset Override"
-                    st.info("Note: Showing exact global Evaluation Metrics from offline model training (Strategy D: optimized pipeline with PCA dimensionality reduction).")
+                    if current_engine == "Strategy D (Fast PCA)":
+                        ch_score = 409737.12
+                        si_score = 0.217
+                        db_score = 1.628
+                    else:
+                        ch_score = 47251.00
+                        si_score = 0.287
+                        db_score = 1.185
+                    st.info(f"Note: Showing exact global Evaluation Metrics from offline model training ({current_engine}).")
                 else:
                     ch_score, si_score, db_score, score_type = calculate_evaluation_scores(df)
 

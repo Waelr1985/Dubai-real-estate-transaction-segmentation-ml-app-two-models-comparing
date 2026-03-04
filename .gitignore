@@ -12,6 +12,7 @@ build/
 # Data (too large for GitHub)
 Transactions.csv
 data/
+models/umap_model.pkl
 
 # IDE
 .vscode/

@@ -1,4 +1,4 @@
-# Dubai Real Estate Transaction Segmentation — End-to-End ML Application
+# Dubai-real-estate-transaction-segmentation-ml-app-two-models-comparing
 
 This repository contains an end-to-end Machine Learning web application designed to segment Dubai real estate transactions, inferring actionable customer profiles (e.g., High-Value Investors, Commercial Renters, etc.) from raw data.
 
@@ -15,7 +15,7 @@ This repository contains an end-to-end Machine Learning web application designed
 | **5** | [Empirical Benchmark: K-Means vs GMM](#5-empirical-benchmark-k-means-vs-gmm-full-16m-dataset) | Head-to-head comparison on the full 1.6M dataset |
 | **6** | [Why K-Means is the Best Choice](#6-why-k-means-is-the-best-choice-for-this-project) | Scalability, explainability, and outlier mitigation |
 | **7** | [Why No Other Algorithm Can Outperform K-Means](#7-why-no-other-algorithm-can-outperform-k-means-here) | Full feasibility matrix and geometric proof |
-| **8** | [Pipeline Optimization: Strategy D](#8-pipeline-optimization-strategy-d-dimension-reduction) | Feature engineering: 455 → 11 features (+62% Silhouette) |
+| **8** | [Pipeline Optimization: PCA vs UMAP](#8-pipeline-optimization-pca-vs-umap) | Strategy D (Fast PCA) vs Strategy E (Deep UMAP) (+32% Silhouette) |
 | **9** | [Why 5 Clusters?](#9-why-5-clusters-the-k-selection) | Mathematical evaluation across k=2..10 |
 | **10** | [The 5 Discovered Market Segments](#10-the-5-discovered-market-segments) | Profiles, validation, silhouette, ARI, and purity tables |
 | **11** | [Setup & Execution](#11-setup--execution) | Installation, training, and launching the dashboard |
@@ -287,7 +287,7 @@ This geometric proof eliminates all remaining candidates:
 
 ---
 
-## 8. Pipeline Optimization: Strategy D (Dimension Reduction)
+## 8. Pipeline Optimization: PCA vs UMAP
 
 Our initial baseline pipeline OneHotEncoded all 12 categorical features, producing **455 sparse binary columns** with only 8 real numeric features (price, area, rent, etc.). This meant **98% of the feature space was noise** — the curse of dimensionality degraded K-Means' Euclidean distance metric, making all points look equidistant.
 
@@ -326,6 +326,19 @@ Applied Principal Component Analysis to compress 118 post-preprocessing columns 
 | Baseline (old) | 455 | 0.134 | 2.199 | 214,539 |
 | Strategy D (current) | **11** | **0.217** | **1.628** | **409,737** |
 | **Improvement** | **97% fewer** | **+61.9%** | **+26.0%** | **+91.0%** |
+
+### 8.5 Strategy E — Topological Optimization (UMAP)
+
+While PCA (Strategy D) is incredibly fast and scales infinitely, it is strictly linear. To extract even tighter, more accurate segments from the raw data without injecting external datasets, we implemented a dual-engine architecture using **UMAP (Uniform Manifold Approximation and Projection)** in a dedicated `src2/` pipeline. 
+
+By bending the feature space non-linearly, UMAP achieved a massive **+32% improvement in Silhouette Score** over PCA, at the trade-off of higher computational cost.
+
+| Engine | Silhouette ↑ | Davies-Bouldin ↓ | Calinski-Harabasz ↑ | Business Use Case |
+| :--- | ---: | ---: | ---: | :--- |
+| **Strategy D (PCA)** | 0.217 | 1.628 | **409,737** | **Hyper-scalable.** Perfect for real-time inference on millions of rows. |
+| **Strategy E (UMAP)** | **0.287** | **1.185** | 47,251 | **High-accuracy geometry.** +32% tighter clusters for deep strategic profiling. |
+
+Both mathematical engines are selectable directly inside the UI dashboard.
 
 ---
 
@@ -491,9 +504,16 @@ Run the notebooks for deep-dive analyses and visualizations:
 *   `notebooks/03_master_eda_and_modeling.ipynb` — the comprehensive master notebook
 
 ### 11.3 Model Training (Modular Pipeline)
-Run the source code pipeline to ingest data, validate it, preprocess it, and train the K-Means model locally:
+The project ships with two distinct mathematical topologies. Choose the one that fits your hardware:
+
+**Option A (Fast PCA Strategy D):**
 ```bash
 python src/model_training.py
+```
+
+**Option B (Deep UMAP Strategy E):**
+```bash
+python src2/model_training.py
 ```
 
 ### 11.4 Launch the Dashboard

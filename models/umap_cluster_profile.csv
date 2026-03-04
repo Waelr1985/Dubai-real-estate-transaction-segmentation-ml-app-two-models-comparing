@@ -1,0 +1,6 @@
+Cluster,has_parking,procedure_area,actual_worth,meter_sale_price,rent_value,meter_rent_price,no_of_parties_role_1,no_of_parties_role_2,no_of_parties_role_3,property_usage_en,property_type_en,area_name_en
+0,0.0,405.0,2550000.0,7695.955,1748716.0,4928.17,1.0,1.0,0.0,Residential,Villa,Al Thanayah Fourth
+1,1.0,43.18,698871.5,13869.669999999998,695642.4,7871.555,1.0,1.0,0.0,Residential,Unit,Al Barsha South Fourth
+2,1.0,114.14,1551065.5,13817.060000000001,681370.0,7857.85,1.0,1.0,0.0,Residential,Unit,Marsa Dubai
+3,1.0,88.72,990000.0,10852.66,1106899.0,8103.36,1.0,1.0,0.0,Residential,Unit,Marsa Dubai
+4,1.0,72.96,1181499.0,16063.74,743550.0,8106.18,1.0,1.0,0.0,Residential,Unit,Al Barsha South Fourth
